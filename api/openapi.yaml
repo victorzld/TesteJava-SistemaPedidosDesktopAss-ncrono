@@ -1,0 +1,118 @@
+openapi: 3.0.3
+info:
+  title: API de Pedidos Assíncronos
+  version: 1.0.0
+  description: |
+    Contrato do simulado Java 21. POST retorna 202 apenas quando a publicação
+    for confirmada pelo broker e roteada. Status são armazenados apenas em memória.
+servers:
+  - url: http://127.0.0.1:9090
+paths:
+  /api/pedidos:
+    post:
+      summary: Aceitar pedido para processamento assíncrono
+      operationId: criarPedido
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pedido'
+            example:
+              id: 550e8400-e29b-41d4-a716-446655440000
+              produto: Teclado
+              quantidade: 2
+              dataCriacao: '2026-10-12T10:30:00'
+      responses:
+        '202':
+          description: Publicação confirmada e mensagem roteada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PedidoAceito'
+        '400':
+          description: Pedido inválido ou JSON malformado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErroApi' }
+        '409':
+          description: UUID já registrado neste processo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErroApi' }
+        '503':
+          description: Publicação não confirmada, NACK, sem rota ou RabbitMQ indisponível. Timeout pode ser ambíguo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErroApi' }
+  /api/pedidos/status/{id}:
+    get:
+      summary: Consultar status em memória
+      operationId: obterStatus
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Pedido encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StatusConsulta' }
+        '400':
+          description: UUID em formato inválido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErroApi' }
+        '404':
+          description: UUID não localizado no mapa em memória
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErroApi' }
+components:
+  schemas:
+    Pedido:
+      type: object
+      additionalProperties: false
+      required: [id, produto, quantidade, dataCriacao]
+      properties:
+        id: { type: string, format: uuid }
+        produto: { type: string, minLength: 1, maxLength: 200 }
+        quantidade: { type: integer, format: int32, minimum: 1 }
+        dataCriacao:
+          type: string
+          description: ISO-8601 LocalDateTime, sem offset de fuso; exemplo local para o simulado
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?$'
+          example: '2026-10-12T10:30:00'
+    PedidoAceito:
+      type: object
+      required: [id, mensagem]
+      properties:
+        id: { type: string, format: uuid }
+        mensagem: { type: string, example: 'Pedido aceito para processamento assíncrono' }
+    StatusConsulta:
+      type: object
+      required: [idPedido, status]
+      properties:
+        idPedido: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [RECEBIDO, PROCESSANDO, SUCESSO, FALHA]
+        dataProcessamento:
+          type: string
+          nullable: true
+          description: ISO-8601 LocalDateTime, sem offset
+          example: '2026-10-12T10:30:03'
+        mensagemErro:
+          type: string
+          nullable: true
+    ErroApi:
+      type: object
+      required: [codigo, mensagem]
+      properties:
+        codigo: { type: string, example: VALIDACAO }
+        mensagem: { type: string, example: 'Quantidade deve ser maior que zero' }
+        detalhes:
+          type: array
+          items: { type: string }
